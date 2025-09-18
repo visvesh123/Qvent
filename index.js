@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
 import dotenv from 'dotenv'
-
+import cors from cors
 import { getEvents , getStudentInfo , markAttendanceDevice ,statsAttendance ,spotRegistrations , markAttendanceManual } from "./controllers/index.js";
 
 
@@ -14,7 +14,7 @@ dayjs.extend(timezone);
 
 const app = express();
 app.use(express.json());
-
+app.use(cors())
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY // use service role key
