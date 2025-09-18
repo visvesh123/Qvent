@@ -4,7 +4,7 @@ import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
 import dotenv from 'dotenv'
-import cors from cors
+import cors from 'cors'
 import { getEvents , getStudentInfo , markAttendanceDevice ,statsAttendance ,spotRegistrations , markAttendanceManual } from "./controllers/index.js";
 
 
