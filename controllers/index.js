@@ -232,9 +232,68 @@ export const markAttendanceDevice = async (req, res) => {
 
 
 
-export const statsAttendance = async (req, res) => { 
-    const { event_id } = req.query;
+// export const statsAttendance = async (req, res) => { 
+//     const { event_id } = req.query;
 
+//     if (!event_id) {
+//       return res.status(400).json({ error: "event_id is required" });
+//     }
+  
+//     try {
+//       // Step 1: Get all registration IDs for this event
+//       const { data: regs, error: regListError } = await supabase
+//         .from("registrations")
+//         .select("reg_id")
+//         .eq("event_id", event_id);
+  
+//       if (regListError) {
+//         return res.status(500).json({ error: "Failed to fetch registrations" });
+//       }
+  
+//       const regIds = regs.map(r => r.reg_id);
+  
+//       // Step 2: Total registrations
+//       const totalRegistrations = regIds.length;
+  
+//       // Step 3: Total attended
+//       const { count: totalAttended } = await supabase
+//         .from("attendance")
+//         .select("att_id", { count: "exact", head: true })
+//         .eq("is_present", true)
+//         .in("reg_id", regIds);
+  
+//       // Step 4: Moving IN
+//       const { count: movingIn } = await supabase
+//         .from("attendance")
+//         .select("att_id", { count: "exact", head: true })
+//         .eq("moving", "IN")
+//         .in("reg_id", regIds);
+  
+//       // Step 5: Moving OUT
+//       const { count: movingOut } = await supabase
+//         .from("attendance")
+//         .select("att_id", { count: "exact", head: true })
+//         .eq("moving", "OUT")
+//         .in("reg_id", regIds);
+  
+//       // Final response
+//       return res.json({
+//         event_id,
+//         total_registrations: totalRegistrations,
+//         total_attended: totalAttended || 0,
+//         moving_in: movingIn || 0,
+//         moving_out: movingOut || 0
+//       });
+//     } catch (err) {
+//       console.error("Server error:", err);
+//       res.status(500).json({ error: "Internal server error" });
+//     }
+// }
+
+
+export const statsAttendance = async (req, res) => {
+    const { event_id } = req.query;
+  
     if (!event_id) {
       return res.status(400).json({ error: "event_id is required" });
     }
@@ -243,17 +302,26 @@ export const statsAttendance = async (req, res) => {
       // Step 1: Get all registration IDs for this event
       const { data: regs, error: regListError } = await supabase
         .from("registrations")
-        .select("reg_id")
+        .select("*")
         .eq("event_id", event_id);
   
       if (regListError) {
         return res.status(500).json({ error: "Failed to fetch registrations" });
       }
   
-      const regIds = regs.map(r => r.reg_id);
+      const { count, error } = await supabase
+        .from("registrations")
+        .select("*", { count: "exact", head: true })
+        .eq("event_id", event_id);
+  
+      if (error) {
+        return res.status(500).json({ error: "Failed to fetch registrations" });
+      }
+  
+      const regIds = regs.map((r) => r.reg_id);
   
       // Step 2: Total registrations
-      const totalRegistrations = regIds.length;
+      const totalRegistrations = count;
   
       // Step 3: Total attended
       const { count: totalAttended } = await supabase
@@ -282,13 +350,13 @@ export const statsAttendance = async (req, res) => {
         total_registrations: totalRegistrations,
         total_attended: totalAttended || 0,
         moving_in: movingIn || 0,
-        moving_out: movingOut || 0
+        moving_out: movingOut || 0,
       });
     } catch (err) {
       console.error("Server error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
-}
+  };
 
 
 export const spotRegistrations = async (req, res) => { 
