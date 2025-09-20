@@ -292,70 +292,83 @@ export const markAttendanceDevice = async (req, res) => {
 
 
 export const statsAttendance = async (req, res) => {
+   
     const { event_id } = req.query;
-  
+
     if (!event_id) {
       return res.status(400).json({ error: "event_id is required" });
     }
-  
+    
     try {
-      // Step 1: Get all registration IDs for this event
-      const { data: regs, error: regListError } = await supabase
+      // 1) Get total registrations count only
+      const { count: totalRegistrations, error: countErr } = await supabase
         .from("registrations")
-        .select("*")
+        .select("reg_id", { count: "exact", head: true })
         .eq("event_id", event_id);
-  
-      if (regListError) {
-        return res.status(500).json({ error: "Failed to fetch registrations" });
+    
+      if (countErr) throw countErr;
+    
+      if (!totalRegistrations || totalRegistrations === 0) {
+        return res.json({
+          event_id,
+          total_registrations: 0,
+          total_attended: 0,
+          moving_in: 0,
+          moving_out: 0,
+        });
       }
-  
-      const { count, error } = await supabase
-        .from("registrations")
-        .select("*", { count: "exact", head: true })
-        .eq("event_id", event_id);
-  
-      if (error) {
-        return res.status(500).json({ error: "Failed to fetch registrations" });
+    
+      // 2) Fetch ALL reg_ids in chunks of 1000
+      const chunkSize = 1000;
+      let allRegs = [];
+      for (let from = 0; from < totalRegistrations; from += chunkSize) {
+        const { data, error } = await supabase
+          .from("registrations")
+          .select("reg_id")
+          .eq("event_id", event_id)
+          .range(from, from + chunkSize - 1);
+    
+        if (error) throw error;
+        allRegs = allRegs.concat(data);
       }
-  
-      const regIds = regs.map((r) => r.reg_id);
-  
-      // Step 2: Total registrations
-      const totalRegistrations = count;
-  
-      // Step 3: Total attended
-      const { count: totalAttended } = await supabase
+    
+      console.log("Fetched registrations:", allRegs.length);
+      const regIds = allRegs.map((r) => r.reg_id);
+    
+      // 3) Fetch attendance rows for those reg_ids
+      const { data: attRows, error: attErr } = await supabase
         .from("attendance")
-        .select("att_id", { count: "exact", head: true })
-        .eq("is_present", true)
+        .select("reg_id, is_present, moving")
         .in("reg_id", regIds);
-  
-      // Step 4: Moving IN
-      const { count: movingIn } = await supabase
-        .from("attendance")
-        .select("att_id", { count: "exact", head: true })
-        .eq("moving", "IN")
-        .in("reg_id", regIds);
-  
-      // Step 5: Moving OUT
-      const { count: movingOut } = await supabase
-        .from("attendance")
-        .select("att_id", { count: "exact", head: true })
-        .eq("moving", "OUT")
-        .in("reg_id", regIds);
-  
-      // Final response
+    
+      if (attErr) throw attErr;
+      console.log("Fetched attendance rows:", attRows.length);
+    
+      // 4) Deduplicate by reg_id
+      const attendedSet = new Set();
+      const movingInSet = new Set();
+      const movingOutSet = new Set();
+    
+      attRows.forEach((r) => {
+        if (r.is_present === true) attendedSet.add(r.reg_id);
+        if (r.moving === "IN") movingInSet.add(r.reg_id);
+        if (r.moving === "OUT") movingOutSet.add(r.reg_id);
+      });
+    
+      // 5) Response
       return res.json({
         event_id,
         total_registrations: totalRegistrations,
-        total_attended: totalAttended || 0,
-        moving_in: movingIn || 0,
-        moving_out: movingOut || 0,
+        total_attended: attendedSet.size,
+        moving_in: movingInSet.size,
+        moving_out: movingOutSet.size,
       });
     } catch (err) {
       console.error("Server error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      return res.status(500).json({ error: "Internal server error" });
     }
+    
+
   };
 
 
