@@ -174,7 +174,7 @@ export const markAttendanceDevice = async (req, res) => {
       // Step 3: Check registration
       const { data: registration } = await supabase
         .from("registrations")
-        .select("reg_id, reg_type")
+        .select("reg_id, reg_type , category")
         .eq("htno", htno)
         .eq("event_id", event_id)
         .maybeSingle();
@@ -264,6 +264,7 @@ export const markAttendanceDevice = async (req, res) => {
         registered: true,
         reg_type: registration.reg_type,
         attendance: attendanceStatus,
+        category : registration.category
       });
     } catch (err) {
       console.error("Server error:", err);
@@ -335,84 +336,127 @@ export const markAttendanceDevice = async (req, res) => {
 
 
 export const statsAttendance = async (req, res) => {
-   
-    const { event_id } = req.query;
+  const { event_id } = req.query;
 
-    if (!event_id) {
-      return res.status(400).json({ error: "event_id is required" });
+  if (!event_id) {
+    return res.status(400).json({ error: "event_id is required" });
+  }
+
+  try {
+    // Fetch registrations with category
+    const { data: registrations, error: regErr } = await supabase
+      .from("registrations")
+      .select("reg_id, category")
+      .eq("event_id", event_id);
+
+    if (regErr) throw regErr;
+
+    if (!registrations?.length) {
+      return res.json({
+        event_id,
+        total_registrations: 0,
+        total_attended: 0,
+        moving_in: 0,
+        moving_out: 0,
+        categories: {},
+      });
     }
-    
-    try {
-      // 1) Get total registrations count only
-      const { count: totalRegistrations, error: countErr } = await supabase
-        .from("registrations")
-        .select("reg_id", { count: "exact", head: true })
-        .eq("event_id", event_id);
-    
-      if (countErr) throw countErr;
-    
-      if (!totalRegistrations || totalRegistrations === 0) {
-        return res.json({
-          event_id,
+
+    const regIds = registrations.map((r) => r.reg_id);
+
+    // Lookup registration -> category
+    const regCategoryMap = {};
+    registrations.forEach((r) => {
+      regCategoryMap[r.reg_id] = r.category || "Uncategorized";
+    });
+
+    // Attendance
+    const { data: attRows, error: attErr } = await supabase
+      .from("attendance")
+      .select("reg_id, is_present, moving")
+      .in("reg_id", regIds);
+
+    if (attErr) throw attErr;
+
+    const attendedSet = new Set();
+    const movingInSet = new Set();
+    const movingOutSet = new Set();
+
+    const categoryStats = {};
+
+    // Initialize category totals
+    registrations.forEach((r) => {
+      const category = r.category || "Uncategorized";
+
+      if (!categoryStats[category]) {
+        categoryStats[category] = {
           total_registrations: 0,
           total_attended: 0,
           moving_in: 0,
           moving_out: 0,
-        });
+        };
       }
-    
-      // 2) Fetch ALL reg_ids in chunks of 1000
-      const chunkSize = 1000;
-      let allRegs = [];
-      for (let from = 0; from < totalRegistrations; from += chunkSize) {
-        const { data, error } = await supabase
-          .from("registrations")
-          .select("reg_id")
-          .eq("event_id", event_id)
-          .range(from, from + chunkSize - 1);
-    
-        if (error) throw error;
-        allRegs = allRegs.concat(data);
-      }
-    
-      console.log("Fetched registrations:", allRegs.length);
-      const regIds = allRegs.map((r) => r.reg_id);
-    
-      // 3) Fetch attendance rows for those reg_ids
-      const { data: attRows, error: attErr } = await supabase
-        .from("attendance")
-        .select("reg_id, is_present, moving")
-        .in("reg_id", regIds);
-    
-      if (attErr) throw attErr;
-      console.log("Fetched attendance rows:", attRows.length);
-    
-      // 4) Deduplicate by reg_id
-      const attendedSet = new Set();
-      const movingInSet = new Set();
-      const movingOutSet = new Set();
-    
-      attRows.forEach((r) => {
-        if (r.is_present === true) attendedSet.add(r.reg_id);
-        if (r.moving === "IN") movingInSet.add(r.reg_id);
-        if (r.moving === "OUT") movingOutSet.add(r.reg_id);
-      });
-    
-      // 5) Response
-      return res.json({
-        event_id,
-        total_registrations: totalRegistrations,
-        total_attended: attendedSet.size,
-        moving_in: movingInSet.size,
-        moving_out: movingOutSet.size,
-      });
-    } catch (err) {
-      console.error("Server error:", err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-    
 
-  };
+      categoryStats[category].total_registrations++;
+    });
+
+    // Prevent double counting
+    const attendedByCategory = {};
+    const movingInByCategory = {};
+    const movingOutByCategory = {};
+
+    attRows.forEach((row) => {
+      const category = regCategoryMap[row.reg_id] || "Uncategorized";
+
+      if (!attendedByCategory[category])
+        attendedByCategory[category] = new Set();
+
+      if (!movingInByCategory[category])
+        movingInByCategory[category] = new Set();
+
+      if (!movingOutByCategory[category])
+        movingOutByCategory[category] = new Set();
+
+      if (row.is_present === true) {
+        attendedSet.add(row.reg_id);
+        attendedByCategory[category].add(row.reg_id);
+      }
+
+      if (row.moving === "IN") {
+        movingInSet.add(row.reg_id);
+        movingInByCategory[category].add(row.reg_id);
+      }
+
+      if (row.moving === "OUT") {
+        movingOutSet.add(row.reg_id);
+        movingOutByCategory[category].add(row.reg_id);
+      }
+    });
+
+    Object.keys(categoryStats).forEach((category) => {
+      categoryStats[category].total_attended =
+        attendedByCategory[category]?.size || 0;
+
+      categoryStats[category].moving_in =
+        movingInByCategory[category]?.size || 0;
+
+      categoryStats[category].moving_out =
+        movingOutByCategory[category]?.size || 0;
+    });
+
+    return res.json({
+      event_id,
+      total_registrations: registrations.length,
+      total_attended: attendedSet.size,
+      moving_in: movingInSet.size,
+      moving_out: movingOutSet.size,
+      categories: categoryStats,
+    });
+  } catch (err) {
+    console.error("Server error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
 
 
 export const spotRegistrations = async (req, res) => { 
