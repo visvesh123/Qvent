@@ -20,6 +20,49 @@ export const getEvents = async (req, res) => {
   };
 
 
+  export const getTodayEvents = async (req, res) => {
+    try {
+      const today = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Kolkata",
+      });
+  
+      const { data, error } = await supabase
+        .from("events")
+        .select(`
+          *,
+          registrations (
+            category
+          )
+        `)
+        .eq("event_date", today)
+        .order("event_date", { ascending: true });
+  
+      if (error) {
+        return res.status(400).json({
+          error: error.message,
+        });
+      }
+  
+      const events = data.map((event) => ({
+        ...event,
+        categories: event.registrations?.length
+          ? [...new Set(event.registrations
+              .map((r) => r.category)
+              .filter(Boolean))]
+          : null,
+        registrations: undefined,
+      }));
+  
+      return res.status(200).json(events);
+    } catch (err) {
+      console.error("Server error:", err);
+      return res.status(500).json({
+        error: "Internal server error",
+      });
+    }
+  };
+
+
 
 
   export const getStudentInfo = async (req, res) => { 

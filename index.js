@@ -5,7 +5,7 @@ import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
 import dotenv from 'dotenv'
 import cors from 'cors'
-import { getEvents , getStudentInfo , markAttendanceDevice ,statsAttendance ,spotRegistrations , markAttendanceManual } from "./controllers/index.js";
+import { getEvents , getTodayEvents, getStudentInfo , markAttendanceDevice ,statsAttendance ,spotRegistrations , markAttendanceManual } from "./controllers/index.js";
 
 
 dotenv.config()
@@ -27,7 +27,7 @@ const supabase = createClient(
   })
 
 app.get("/api/events" , getEvents)
-
+app.get("/api/events/today",getTodayEvents )
 app.get("/api/student-info",getStudentInfo)
 app.get("/api/mark-attendance", markAttendanceDevice)
 app.get("/api/mark-attendance-manual", markAttendanceManual)
